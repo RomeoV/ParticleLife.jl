@@ -3,6 +3,7 @@ using Agents
 using Random
 import StatsBase: middle
 import StaticArraysCore: SVector
+using FLoops
 
 export agent_step!, make_model, color_sym
 
@@ -23,11 +24,11 @@ function make_model()
     extent::NTuple{2, Float64} = (500.0, 500.0);
     space2d = ContinuousSpace(extent;
                               periodic=false,
-                              update_vel! = update_vel!,
-                              spacing=minimum(extent)/200
+                              # update_vel! = update_vel!,
+                              spacing=minimum(extent)/20
                               );
                               # spacing=minimum(extent)/200)
-    model = AgentBasedModel(Particle, space2d; agent_step! = agent_step!)
+    model = AgentBasedModel(Particle, space2d; agent_step! = agent_step!, model_step! = model_step!)
 
     for c in [Red(), Green(), Yellow()]
         for _ in 1:200
@@ -55,6 +56,13 @@ color_sym(::Green) = :green
 color_sym(::Red) = :red
 color_sym(::Yellow) = :yellow
 
+function model_step!(model)
+    @floop for agent in allagents(model)
+    # for agent in allagents(model)
+        update_vel!(agent, model)
+    end
+end
+
 agent_step!(agent, model) = move_agent!(agent, model, 0.1)
 function update_vel!(agent::Particle, model::ABM)
     force = sum(
@@ -64,7 +72,11 @@ function update_vel!(agent::Particle, model::ABM)
         for other in Agents.nearby_agents(agent, model, 80);
         init = SVector(0., 0.),
     )
-    agent.vel = clamp.(middle.(agent.vel, force), -500, 500)
+    # push away from border
+    force += 100*(max.(1 ./ agent.pos .- 1/40, 0)
+                 - max.(1 ./(spacesize(model) - agent.pos) .- 1/40, 0))
+    agent.vel = middle.(agent.vel, force)
+    agent.vel = clamp.(agent.vel, -400, 400)
 end
 
 end # module ParticleLife

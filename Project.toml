@@ -1,0 +1,19 @@
+name = "ParticleLife"
+uuid = "8d4255ef-5262-441b-a298-1cc7bc37d07d"
+authors = ["Romeo Valentin <romeov@stanford.edu>"]
+version = "0.1.0"
+
+[deps]
+Agents = "46ada45e-f475-11e8-01d0-f70cc89e6671"
+ChunkSplitters = "ae650224-84b6-46f8-82ea-d812ca08434e"
+DataStructures = "864edb3b-99cc-5e75-8d2d-829cb0a9cfe8"
+FLoops = "cc61a311-1640-44b5-9fba-1b764f453329"
+FoldsThreads = "9c68100b-dfe1-47cf-94c8-95104e173443"
+GLMakie = "e9467ef8-e4e7-5192-8a1a-b1aee30e663a"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Makie = "ee78f7c6-11fb-53f2-987a-cfe4a2b5a57a"
+OnlineStats = "a15396b6-48d5-5d58-9928-6d29437db91e"
+Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
+StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
+StatsBase = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
+WGLMakie = "276b4fcb-3e11-5398-bf8b-a0c2d153d008"

@@ -4,7 +4,6 @@ using Random
 import StatsBase: middle
 import StaticArraysCore: SVector, MVector
 using FLoops
-using FoldsThreads
 using DataStructures: OrderedDict
 import LinearAlgebra: norm
 using Makie, Makie.Observables
@@ -65,11 +64,8 @@ color_sym(::Orange) = :orange
 color_sym(::Cyan) = :cyan
 color_sym(::Yellow) = :yellow
 
-# last_model_step_time = DefaultDict{StandardABM, UInt64}(time_ns)
-# avg_model_step_duration = DefaultDict{StandardABM, Observable{Mean}}(Observable(Mean(weight=HarmonicWeight(300))))
 last_model_step_time::UInt64 = time_ns()
 avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=HarmonicWeight(30)))
-# avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=McclainWeight(0.1)))
 
 function model_step!(model; to=TimerOutput())
     @timeit to "update_vel! loop" begin

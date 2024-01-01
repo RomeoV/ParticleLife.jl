@@ -43,7 +43,7 @@ function make_model(to=TimerOutput())
                             )
 
     for c in [Red(), Green(), Orange(), Cyan()]
-        for _ in 1:1000
+        for _ in 1:750
             vel =  SVector(0., 0.)
             add_agent!(model, vel, c)
         end
@@ -69,6 +69,7 @@ color_sym(::Yellow) = :yellow
 # avg_model_step_duration = DefaultDict{StandardABM, Observable{Mean}}(Observable(Mean(weight=HarmonicWeight(300))))
 last_model_step_time::UInt64 = time_ns()
 avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=HarmonicWeight(30)))
+# avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=McclainWeight(0.1)))
 
 function model_step!(model; to=TimerOutput())
     @timeit to "update_vel! loop" begin

@@ -1,7 +1,7 @@
 # ParticleLife.jl
 
 Reimplementation of [particle-life](https://github.com/hunar4321/particle-life/tree/main)
-in Julia, using `Agents.jl` and `Makie.jl`.
+in Julia, using `Agents.jl` and `Makie.jl`. The entire code, including visualization, is <200 lines.
 
 The code uses pretty straight-forward multi-threading for the velocity updates, and achieves >200fps for moderate number of particles (800 particles somewhat densely packed), including drawing, and about 30-40fps for 3000 particles.
 

@@ -14,6 +14,10 @@ using TimerOutputs
 
 export agent_step!, make_model, color_sym, run_sim
 
+# define some module-local vars for tracking fps
+last_model_step_time::UInt64 = time_ns()
+avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=HarmonicWeight(30)))
+
 abstract type ParticleColor end
 struct Red <: ParticleColor end
 struct Green <: ParticleColor end
@@ -47,9 +51,7 @@ function make_model(to=TimerOutput())
             add_agent!(model, vel, c)
         end
     end
-    @assert all(0 <= agent.pos[i] <= extent[i] for agent in allagents(model), i=1:2)
 
-    # for tracking fps
     model
 end
 
@@ -64,11 +66,31 @@ color_sym(::Orange) = :orange
 color_sym(::Cyan) = :cyan
 color_sym(::Yellow) = :yellow
 
-last_model_step_time::UInt64 = time_ns()
-avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=HarmonicWeight(30)))
+properties=OrderedDict(
+    :red_red       => -1:0.1:1,
+    :red_green     => -1:0.1:1,
+    :red_orange    => -1:0.1:1,
+    :red_cyan      => -1:0.1:1,
+    :green_red     => -1:0.1:1,
+    :green_green   => -1:0.1:1,
+    :green_orange  => -1:0.1:1,
+    :green_cyan    => -1:0.1:1,
+    :orange_red    => -1:0.1:1,
+    :orange_green  => -1:0.1:1,
+    :orange_orange => -1:0.1:1,
+    :orange_cyan   => -1:0.1:1,
+    :cyan_red      => -1:0.1:1,
+    :cyan_green    => -1:0.1:1,
+    :cyan_orange   => -1:0.1:1,
+    :cyan_cyan     => -1:0.1:1,
+    :viscosity     =>  0:.01:1,
+)
+
+agent_step!(agent, model) = move_agent!(agent, model, abmproperties(model)[:time_scale])
 
 function model_step!(model; to=TimerOutput())
     @timeit to "update_vel! loop" begin
+        # about 20% speedup to extract the viscosity var first.
         viscosity::Float64 = abmproperties(model)[:viscosity]
         @floop for agent in collect(allagents(model))
             update_vel!(agent, model; viscosity=viscosity)
@@ -94,10 +116,9 @@ function model_step!(model; to=TimerOutput())
     delta_time = time_ns() - ParticleLife.last_model_step_time
     ParticleLife.last_model_step_time = time_ns()
     fit!(ParticleLife.avg_model_step_duration[], delta_time/1e9)
-    notify(ParticleLife.avg_model_step_duration)
+    notify(ParticleLife.avg_model_step_duration)  # to update the fps label
 end
 
-agent_step!(agent, model) = move_agent!(agent, model, abmproperties(model)[:time_scale])
 function update_vel!(agent::Particle, model::ABM; viscosity::Union{Nothing, Float64}=nothing)
     force = sum(
         let g = color_interact(agent.color, other.color, model),
@@ -126,12 +147,13 @@ function run_sim(; to=TimerOutput())
                 scatterkwargs=(; :markerspace=>:data),
                 enable_inspection=false)
     end
-    # fig[1,2] = content(fig[2,1])
+
+    # the rest is mostly changing the layout a bit and adding a randomize button and an fps label
     controls = content(fig[2,1][1,1])
     param_sliders = content(fig[2,1][1,2])
     update_button = content(param_sliders[2,1])
 
-    # fig[1,1] = ax
+    # the size is currently fixed, probably not a good long-term solution
     ax.width[] = 1000
     ax.height[] = 1500
     ui = fig[1,2] = GridLayout();
@@ -141,17 +163,17 @@ function run_sim(; to=TimerOutput())
     update_and_rand_button = param_sliders[2,1] = GridLayout();
     update_and_rand_button[1,1] = update_button
     rand_button = Button(update_and_rand_button[1,2], label="randomize", tellwidth=true)
-    on(rand_button.clicks) do _
+    on(rand_button.clicks) do _  # randomize params
         for s in sg.sliders
             set_close_to!(s, rand(s.range[]))
         end
         update_button.clicks[] += 1
         abmproperties(model)[:time_scale] = 1.0
     end
-
     Label(ui[2,1], "----------------------")
     ui[3,1] = controls
     Label(ui[4,1], "----------------------")
+    # show fps
     empty!(avg_model_step_duration.listeners)
     fps = throttle(0.5, @lift 1/value($avg_model_step_duration))
     fps_label = Label(ui[5,1], text="0.0 fps")
@@ -169,25 +191,5 @@ function make_video()
                 scatterkwargs=(; :markerspace=>:data))
     end
 end
-
-properties=OrderedDict(
-    :red_red       => -1:0.1:1,
-    :red_green     => -1:0.1:1,
-    :red_orange    => -1:0.1:1,
-    :red_cyan      => -1:0.1:1,
-    :green_red     => -1:0.1:1,
-    :green_green   => -1:0.1:1,
-    :green_orange  => -1:0.1:1,
-    :green_cyan    => -1:0.1:1,
-    :orange_red    => -1:0.1:1,
-    :orange_green  => -1:0.1:1,
-    :orange_orange => -1:0.1:1,
-    :orange_cyan   => -1:0.1:1,
-    :cyan_red      => -1:0.1:1,
-    :cyan_green    => -1:0.1:1,
-    :cyan_orange   => -1:0.1:1,
-    :cyan_cyan     => -1:0.1:1,
-    :viscosity     =>  0:.01:1,
-)
 
 end # module ParticleLife

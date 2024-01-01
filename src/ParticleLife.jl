@@ -9,6 +9,9 @@ using DataStructures: OrderedDict
 import LinearAlgebra: norm
 using Makie, Makie.Observables
 using OnlineStats
+import DataStructures: DefaultDict
+using ThreadPinning
+using TimerOutputs
 
 export agent_step!, make_model, color_sym, run_sim
 
@@ -23,15 +26,16 @@ struct Orange <: ParticleColor end
     color::ParticleColor
 end
 
-function make_model()
+function make_model(to=TimerOutput())
     extent::NTuple{2, Float64} = 3 .* (500.0, 500.0);
     space2d = ContinuousSpace(extent;
                               periodic=false,
-                              spacing=20,
+                              # spacing=20,
                               );
     model = AgentBasedModel(Particle, space2d;
-                            agent_step! = agent_step!,
-                            model_step! = model_step!,
+                            agent_step! = (args...) -> (@timeit to "agent_step!" agent_step!(args...)),
+                            model_step! = (args...) -> (@timeit to "model_step!" model_step!(args...; to=to)
+                            ),
                             properties=push!(Dict{Symbol, Float64}(
                                                 lhs_rhs=>rand(range)
                                                 for (lhs_rhs, range) in properties),
@@ -47,12 +51,11 @@ function make_model()
     @assert all(0 <= agent.pos[i] <= extent[i] for agent in allagents(model), i=1:2)
 
     # for tracking fps
-    push!(last_model_step_time, model => time_ns())
-    push!(avg_model_step_duration, model=>Observable(Mean(weight=HarmonicWeight(1000))))
     model
 end
 
-color_interact(lhs::ParticleColor,  rhs::ParticleColor, m::ABM) = abmproperties(m)[Symbol(string(color_sym(lhs))*'_'*string(color_sym(rhs)))]
+color_interact(lhs::ParticleColor,  rhs::ParticleColor, m::ABM) =
+    abmproperties(m)[Symbol(string(color_sym(lhs))*'_'*string(color_sym(rhs)))]
 
 color_sym(p::Particle) = color_sym(p.color)
 color_sym(::ParticleColor) = :black
@@ -62,22 +65,26 @@ color_sym(::Orange) = :orange
 color_sym(::Cyan) = :cyan
 color_sym(::Yellow) = :yellow
 
-last_model_step_time = IdDict{StandardABM, UInt64}()
-avg_model_step_duration = IdDict{StandardABM, Observable{Mean}}()
+# last_model_step_time = DefaultDict{StandardABM, UInt64}(time_ns)
+# avg_model_step_duration = DefaultDict{StandardABM, Observable{Mean}}(Observable(Mean(weight=HarmonicWeight(300))))
+last_model_step_time::UInt64 = time_ns()
+avg_model_step_duration::Observable{Mean{Float64}} = Observable(Mean(weight=HarmonicWeight(30)))
 
-function model_step!(model)
-    total_vel = 0.
-    max_vel = 0.
-    @floop for agent in collect(allagents(model))
-        # for agent in allagents(model)
-            update_vel!(agent, model)
-            # @reduce(total_vel += norm(agent.vel))
-            @reduce(max_vel = max(total_vel,  norm(agent.vel)))
-            # total_vel += norm(agent.vel)
+function model_step!(model; to=TimerOutput())
+    @timeit to "update_vel! loop" begin
+        viscosity::Float64 = abmproperties(model)[:viscosity]
+        @floop for agent in collect(allagents(model))
+            update_vel!(agent, model; viscosity=viscosity)
+        end
     end
-    total_vel /= length(allagents(model))
-    # if total_vel > 30.
-    if max_vel*model.time_scale > 30.
+    @timeit to "max reduction" begin
+        max_vel = maximum(map(x->norm(x.vel), allagents(model)))
+    end
+    @timeit to "mean reduction" begin
+        mean_vel = mean(map(x->norm(x.vel), allagents(model)))
+    end
+    # model.time_scale = max(0.1/max_vel, 1.)
+    if max_vel*model.time_scale > getfield(model, :space).spacing || mean_vel*model.time_scale > 30
         model.time_scale /= 1.1
     end
     if model.time_scale < 0.9
@@ -87,34 +94,34 @@ function model_step!(model)
     end
     @debug model.time_scale
 
-    delta_time = time_ns() - last_model_step_time[model]
-    last_model_step_time[model] = time_ns()
-    fit!(avg_model_step_duration[model][], delta_time/1e9)
-    notify(avg_model_step_duration[model])
+    delta_time = time_ns() - ParticleLife.last_model_step_time
+    ParticleLife.last_model_step_time = time_ns()
+    fit!(ParticleLife.avg_model_step_duration[], delta_time/1e9)
+    notify(ParticleLife.avg_model_step_duration)
 end
 
 agent_step!(agent, model) = move_agent!(agent, model, abmproperties(model)[:time_scale])
-function update_vel!(agent::Particle, model::ABM)
+function update_vel!(agent::Particle, model::ABM; viscosity::Union{Nothing, Float64}=nothing)
     force = sum(
         let g = color_interact(agent.color, other.color, model),
             d = euclidean_distance(agent, other, model)
-            (0 < d < 80 ? (g / d .* (agent.pos - other.pos)) : SVector(0., 0.))
+            (0 < d < 80 ? (g / d .* (agent.pos - other.pos)) : zero(SVector{2, Float64}))
         end
         for other in Agents.nearby_agents(agent, model, 80);
-        init = SVector(0., 0.),
+        init = zero(SVector{2, Float64}),
     )
     # push away from border
     force += 0.1*(max.(40 .- agent.pos, 0)
                  - max.(40 .- (spacesize(model) - agent.pos), 0))
 
     # combine past velocity and current force
-    viscosity = abmproperties(model)[:viscosity]
+    viscosity = (isnothing(viscosity) ? abmproperties(model)[:viscosity] : viscosity)
     agent.vel = agent.vel * (1-viscosity) + force
 end
 
-function run_sim()
+function run_sim(; to=TimerOutput())
     # this is basically it, but we want to rearrange the layout a bit.
-    model = make_model()
+    model = make_model(to)
     fig, ax, abmobs = with_theme(theme_dark()) do
         abmplot(model;
                 ac=color_sym, as=8.0,  # agent color and size
@@ -148,7 +155,8 @@ function run_sim()
     Label(ui[2,1], "----------------------")
     ui[3,1] = controls
     Label(ui[4,1], "----------------------")
-    fps = throttle(0.5, @lift 1/value($(avg_model_step_duration[model])))
+    empty!(avg_model_step_duration.listeners)
+    fps = throttle(0.5, @lift 1/value($avg_model_step_duration))
     fps_label = Label(ui[5,1], text="0.0 fps")
     on(fps) do fps
         fps_label.text = "$(round(fps, digits=2)) fps"

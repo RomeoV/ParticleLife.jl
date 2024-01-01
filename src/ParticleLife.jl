@@ -166,6 +166,13 @@ function run_sim(; to=TimerOutput())
     fig
 end
 
+function make_video()
+    with_theme(theme_dark()) do
+        abmvideo("/tmp/foo.mp4", make_model(), ac=color_sym, as=8.0;
+                scatterkwargs=(; :markerspace=>:data))
+    end
+end
+
 properties=OrderedDict(
     :red_red       => -1:0.1:1,
     :red_green     => -1:0.1:1,

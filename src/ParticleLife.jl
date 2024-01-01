@@ -12,8 +12,6 @@ using OnlineStats
 
 export agent_step!, make_model, color_sym, run_sim
 
-greet() = print("Hello World!")
-
 abstract type ParticleColor end
 struct Red <: ParticleColor end
 struct Green <: ParticleColor end
@@ -26,7 +24,7 @@ struct Orange <: ParticleColor end
 end
 
 function make_model()
-    extent::NTuple{2, Float64} = 4 .* (500.0, 500.0);
+    extent::NTuple{2, Float64} = 3 .* (500.0, 500.0);
     space2d = ContinuousSpace(extent;
                               periodic=false,
                               spacing=20,
@@ -42,15 +40,15 @@ function make_model()
 
     for c in [Red(), Green(), Orange(), Cyan()]
         for _ in 1:1000
-            # vel =  SVector(rand() * 400 + 50, rand() * 400 + 50)
             vel =  SVector(0., 0.)
             add_agent!(model, vel, c)
         end
     end
     @assert all(0 <= agent.pos[i] <= extent[i] for agent in allagents(model), i=1:2)
 
+    # for tracking fps
     push!(last_model_step_time, model => time_ns())
-    push!(avg_model_step_duration, model=>Observable(Mean()))
+    push!(avg_model_step_duration, model=>Observable(Mean(weight=HarmonicWeight(1000))))
     model
 end
 
@@ -69,14 +67,17 @@ avg_model_step_duration = IdDict{StandardABM, Observable{Mean}}()
 
 function model_step!(model)
     total_vel = 0.
+    max_vel = 0.
     @floop for agent in collect(allagents(model))
         # for agent in allagents(model)
             update_vel!(agent, model)
-            @reduce(total_vel += norm(agent.vel))
+            # @reduce(total_vel += norm(agent.vel))
+            @reduce(max_vel = max(total_vel,  norm(agent.vel)))
             # total_vel += norm(agent.vel)
     end
     total_vel /= length(allagents(model))
-    if total_vel > 30.
+    # if total_vel > 30.
+    if max_vel*model.time_scale > 30.
         model.time_scale /= 1.1
     end
     if model.time_scale < 0.9
@@ -118,7 +119,8 @@ function run_sim()
         abmplot(model;
                 ac=color_sym, as=8.0,  # agent color and size
                 params=ParticleLife.properties,
-                scatterkwargs=(; :markerspace=>:data))
+                scatterkwargs=(; :markerspace=>:data),
+                enable_inspection=false)
     end
     # fig[1,2] = content(fig[2,1])
     controls = content(fig[2,1][1,1])
@@ -140,6 +142,7 @@ function run_sim()
             set_close_to!(s, rand(s.range[]))
         end
         update_button.clicks[] += 1
+        abmproperties(model)[:time_scale] = 1.0
     end
 
     Label(ui[2,1], "----------------------")
